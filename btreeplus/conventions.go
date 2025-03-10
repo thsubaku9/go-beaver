@@ -3,6 +3,7 @@ package btreeplus
 import (
 	"beaver/helpers"
 	"encoding/binary"
+	"fmt"
 )
 
 // ByteArr references to either the key/value variable value
@@ -109,4 +110,19 @@ func nodeAppendKV(bnode BNode, idx uint16, ptr uint64, key ByteArr, val ByteArr)
 	copy(bnode[pos+KV_HEADER_SIZE+uint16(len(key)):], val)
 
 	bnode.setOffset(idx+1, bnode.getOffset(idx)+KV_HEADER_SIZE+uint16((len(key)+len(val))))
+}
+
+func Run() {
+	node := BNode(make([]byte, BTREE_PAGE_SIZE))
+	node.setHeader(uint16(Leaf), 2)
+	// ^type       ^ number of keys
+	nodeAppendKV(node, 0, 0, []byte("k1"), []byte("hi"))
+	// ^ 1st KV
+	nodeAppendKV(node, 1, 0, []byte("k3"), []byte("hello"))
+	// ^ 2nd KV
+
+	fmt.Println(NodeType(node.btype()))
+	fmt.Println(node.nkeys())
+	k, v := node.getKeyAndVal(1)
+	fmt.Printf("%s := %s\n", k, v)
 }

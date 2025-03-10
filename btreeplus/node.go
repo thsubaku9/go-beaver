@@ -1,11 +1,22 @@
 package btreeplus
 
-type NodeType int
+type NodeType uint16
 
 const (
-	Internal NodeType = iota
+	Internal NodeType = iota + 1
 	Leaf
 )
+
+func (n NodeType) String() string {
+	switch n {
+	case Internal:
+		return "Internal"
+	case Leaf:
+		return "Leaf"
+	default:
+		return "NA"
+	}
+}
 
 type Node interface {
 	GetNodeType() NodeType
