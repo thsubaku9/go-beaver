@@ -22,6 +22,7 @@ Leaf Node
 */
 
 const (
+	BASE               = 0
 	NODE_TYPE_SIZE     = 2
 	NKEYS_SIZE         = 2
 	HEADER_SIZE        = NODE_TYPE_SIZE + NKEYS_SIZE
@@ -40,21 +41,21 @@ func init() {
 	helpers.Assert(node1max <= BTREE_PAGE_SIZE) // maximum KV
 }
 
-// header getters
+// header fns
 func (node BNode) btype() uint16 {
-	return binary.LittleEndian.Uint16(node[0:NODE_TYPE_SIZE])
+	return binary.LittleEndian.Uint16(node[BASE:NODE_TYPE_SIZE])
 }
 
 func (node BNode) nkeys() uint16 {
-	return binary.LittleEndian.Uint16(node[0+NODE_TYPE_SIZE : 4])
+	return binary.LittleEndian.Uint16(node[BASE+NODE_TYPE_SIZE : 4])
 }
 
-// header setter
 func (node BNode) setHeader(btype uint16, nkeys uint16) {
-	binary.LittleEndian.PutUint16(node[0:NODE_TYPE_SIZE], btype)
-	binary.LittleEndian.PutUint16(node[0+NODE_TYPE_SIZE:4], nkeys)
+	binary.LittleEndian.PutUint16(node[BASE:NODE_TYPE_SIZE], btype)
+	binary.LittleEndian.PutUint16(node[BASE+NODE_TYPE_SIZE:BASE+NODE_TYPE_SIZE+NKEYS_SIZE], nkeys)
 }
 
+// ptr fns
 func (node BNode) getPtr(idx uint16) uint64 {
 	helpers.Assert(idx < node.nkeys())
 	pos_ptr := HEADER_SIZE + idx*POINTER_SIZE
@@ -67,11 +68,18 @@ func (node BNode) setPtr(idx uint16, val uint64) {
 	binary.LittleEndian.PutUint64(node[pos_ptr:], val)
 }
 
+// offset fns
 func (node BNode) getOffset(idx uint16) uint16 {
 	pos := HEADER_SIZE + POINTER_SIZE*node.nkeys() + OFFSET_SIZE*(idx)
 	return binary.LittleEndian.Uint16(node[pos:])
 }
 
+func (node BNode) setOffset(idx uint16, offsetVal uint16) {
+	pos := HEADER_SIZE + POINTER_SIZE*node.nkeys() + OFFSET_SIZE*(idx)
+	binary.LittleEndian.PutUint16(node[pos:], offsetVal)
+}
+
+// obtaining kv position given the index
 func (node BNode) kvPos(idx uint16) uint16 {
 	helpers.Assert(idx <= node.nkeys())
 	return node.getOffset(idx)
@@ -83,4 +91,22 @@ func (node BNode) getKeyAndVal(idx uint16) (ByteArr, ByteArr) {
 	klen := binary.LittleEndian.Uint16(node[pos:])
 	vlen := binary.LittleEndian.Uint16(node[pos+KEY_SIZE:])
 	return ByteArr(node[pos+KV_HEADER_SIZE:][:klen]), ByteArr(node[pos+KV_HEADER_SIZE+klen:][:vlen])
+}
+
+func (node BNode) nbytes() uint16 {
+	return node.kvPos(node.nkeys())
+}
+
+func nodeAppendKV(bnode BNode, idx uint16, ptr uint64, key ByteArr, val ByteArr) {
+	bnode.setPtr(idx, ptr)
+
+	pos := bnode.kvPos(idx)
+
+	binary.LittleEndian.PutUint16(bnode[pos:], uint16(len(key)))
+	binary.LittleEndian.PutUint16(bnode[pos+KEY_SIZE:], uint16(len(val)))
+
+	copy(bnode[pos+KV_HEADER_SIZE:], key)
+	copy(bnode[pos+KV_HEADER_SIZE+uint16(len(key)):], val)
+
+	bnode.setOffset(idx+1, bnode.getOffset(idx)+KV_HEADER_SIZE+uint16((len(key)+len(val))))
 }
