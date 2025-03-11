@@ -112,6 +112,24 @@ func nodeAppendKV(bnode BNode, idx uint16, ptr uint64, key ByteArr, val ByteArr)
 	bnode.setOffset(idx+1, bnode.getOffset(idx)+KV_HEADER_SIZE+uint16((len(key)+len(val))))
 }
 
+func nodeAppendRange(new, old BNode, dstNew, srcOld, n uint16) {
+
+	for i := uint16(0); i < n; i++ {
+		dst, src := dstNew+i, srcOld+i
+		oldPtr := old.getPtr(src)
+		k, v := old.getKeyAndVal(src)
+
+		nodeAppendKV(new, dst, oldPtr, k, v)
+	}
+}
+
+func leafUpsert(new, old BNode, idx uint16, key, val ByteArr, isUpdate uint16) {
+	new.setHeader(uint16(Leaf), old.nkeys()+1)
+	nodeAppendRange(new, old, 0, 0, idx)
+	nodeAppendKV(new, idx, 0, key, val)
+	nodeAppendRange(new, old, idx+1, idx+(isUpdate&0x01), old.nkeys()-(idx+(isUpdate&0x01)))
+}
+
 func Run() {
 	node := BNode(make([]byte, BTREE_PAGE_SIZE))
 	node.setHeader(uint16(Leaf), 2)
