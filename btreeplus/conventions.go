@@ -7,6 +7,24 @@ import (
 	"fmt"
 )
 
+type NodeType uint16
+
+const (
+	InternalNode NodeType = iota
+	LeafNode
+)
+
+func (n NodeType) String() string {
+	switch n {
+	case InternalNode:
+		return "InternalNode"
+	case LeafNode:
+		return "LeafNode"
+	default:
+		return "NA"
+	}
+}
+
 // ByteArr references to either the key/value variable value
 type ByteArr []byte
 
@@ -137,7 +155,7 @@ func nodeAppendRange(new, old BNode, dstNew, srcOld, n uint16) {
 }
 
 func leafUpsert(new, old BNode, idx uint16, key, val ByteArr, isUpdate uint16) {
-	new.setHeader(uint16(Leaf), old.nkeys()+1)
+	new.setHeader(uint16(LeafNode), old.nkeys()+1)
 	nodeAppendRange(new, old, 0, 0, idx)
 	nodeAppendKV(new, idx, 0, key, val)
 	nodeAppendRange(new, old, idx+1, idx+(isUpdate&0x01), old.nkeys()-(idx+(isUpdate&0x01)))
@@ -225,7 +243,7 @@ func nodeSplit3(old BNode) (uint16, [3]BNode) {
 
 func Run() {
 	node := BNode(make([]byte, BTREE_PAGE_SIZE))
-	node.setHeader(uint16(Leaf), 2)
+	node.setHeader(uint16(LeafNode), 2)
 	// ^type       ^ number of keys
 	nodeAppendKV(node, 0, 0, []byte("k1"), []byte("hi"))
 	// ^ 1st KV
