@@ -59,28 +59,35 @@ func (node BNode) setHeader(btype uint16, nkeys uint16) {
 
 // ptr fns
 func (node BNode) getPtr(idx uint16) uint64 {
-	helpers.Assert(idx < node.nkeys()-1)
+	helpers.Assert(idx < node.nkeys())
 	pos_ptr := HEADER_SIZE + idx*POINTER_SIZE
 	return binary.LittleEndian.Uint64(node[pos_ptr:])
 }
 
 func (node BNode) setPtr(idx uint16, val uint64) {
-	helpers.Assert(idx < node.nkeys()-1)
+	helpers.Assert(idx < node.nkeys())
 	pos_ptr := HEADER_SIZE + idx*POINTER_SIZE
 	binary.LittleEndian.PutUint64(node[pos_ptr:], val)
 }
 
-// offset fns
+// offset fns wrt starting of kv entry block
 func (node BNode) getOffset(idx uint16) uint16 {
-	pos := HEADER_SIZE + POINTER_SIZE*node.nkeys() + OFFSET_SIZE*(idx)
+	if idx == 0 {
+		return 0
+	}
+	pos := HEADER_SIZE + POINTER_SIZE*node.nkeys() + OFFSET_SIZE*(idx-1)
 	return binary.LittleEndian.Uint16(node[pos:])
 }
 
 func (node BNode) setOffset(idx uint16, offsetVal uint16) {
-	pos := HEADER_SIZE + POINTER_SIZE*node.nkeys() + OFFSET_SIZE*(idx)
+	if idx == 0 {
+		return
+	}
+	pos := HEADER_SIZE + POINTER_SIZE*node.nkeys() + OFFSET_SIZE*(idx-1)
 	binary.LittleEndian.PutUint16(node[pos:], offsetVal)
 }
 
+// provides position of kv entry block wrt buffer start
 func (node BNode) getKvStartPosition() uint16 {
 	return HEADER_SIZE + POINTER_SIZE*node.nkeys() + OFFSET_SIZE*node.nkeys()
 }
@@ -92,7 +99,7 @@ func (node BNode) kvPos(idx uint16) uint16 {
 }
 
 func (node BNode) getKeyAndVal(idx uint16) (ByteArr, ByteArr) {
-	helpers.Assert(idx < node.nkeys()-1)
+	helpers.Assert(idx < node.nkeys())
 	pos := node.kvPos(idx)
 
 	klen := binary.LittleEndian.Uint16(node[pos:])
@@ -166,16 +173,59 @@ func nodeSplit2(left, right, old BNode) {
 	left_bytes := func() uint16 {
 		return HEADER_SIZE + POINTER_SIZE*nleft + OFFSET_SIZE*nleft +
 			old.getOffset(nleft)
-	} // todo -> kinda sussy cause getOffset provides offset wrt node
+	}
 
 	for left_bytes() > BTREE_PAGE_SIZE {
 		nleft--
 	}
+
+	helpers.Assert(nleft >= 1)
+
+	right_bytes := func() uint16 {
+		return old.nbytes() - left_bytes() + KV_HEADER_SIZE
+	}
+
+	for right_bytes() > BTREE_PAGE_SIZE {
+		nleft++
+	}
+
+	helpers.Assert(nleft < old.nkeys())
+	nright := old.nkeys() - nleft
+	// new nodes
+	left.setHeader(old.btype(), nleft)
+	right.setHeader(old.btype(), nright)
+	nodeAppendRange(left, old, 0, 0, nleft)
+	nodeAppendRange(right, old, 0, nleft, nright)
+	// NOTE: the left half may be still too big
+	helpers.Assert(right.nbytes() <= BTREE_PAGE_SIZE)
+
+}
+
+// split a node if it's too big. the results are 1~3 nodes.
+func nodeSplit3(old BNode) (uint16, [3]BNode) {
+	if old.nbytes() <= BTREE_PAGE_SIZE {
+		old = old[:BTREE_PAGE_SIZE]
+		return 1, [3]BNode{old} // not split
+	}
+
+	left := BNode(make([]byte, 2*BTREE_PAGE_SIZE)) // might be split later
+	right := BNode(make([]byte, BTREE_PAGE_SIZE))
+	nodeSplit2(left, right, old)
+	if left.nbytes() <= BTREE_PAGE_SIZE {
+		left = left[:BTREE_PAGE_SIZE]
+		return 2, [3]BNode{left, right} // 2 nodes
+	}
+
+	leftleft := BNode(make([]byte, BTREE_PAGE_SIZE))
+	middle := BNode(make([]byte, BTREE_PAGE_SIZE))
+	nodeSplit2(leftleft, middle, left)
+	helpers.Assert(leftleft.nbytes() <= BTREE_PAGE_SIZE)
+	return 3, [3]BNode{leftleft, middle, right} // 3 nodes
 }
 
 func Run() {
 	node := BNode(make([]byte, BTREE_PAGE_SIZE))
-	node.setHeader(uint16(Leaf), 3)
+	node.setHeader(uint16(Leaf), 2)
 	// ^type       ^ number of keys
 	nodeAppendKV(node, 0, 0, []byte("k1"), []byte("hi"))
 	// ^ 1st KV
@@ -189,4 +239,5 @@ func Run() {
 
 	k, v = node.getKeyAndVal(1)
 	fmt.Printf("%s := %s\n", k, v)
+	fmt.Println(node.nbytes())
 }
