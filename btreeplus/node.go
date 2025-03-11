@@ -3,7 +3,7 @@ package btreeplus
 type NodeType uint16
 
 const (
-	Internal NodeType = iota + 1
+	Internal NodeType = iota
 	Leaf
 )
 

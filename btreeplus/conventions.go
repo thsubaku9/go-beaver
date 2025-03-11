@@ -2,6 +2,7 @@ package btreeplus
 
 import (
 	"beaver/helpers"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 )
@@ -28,7 +29,7 @@ const (
 	NKEYS_SIZE         = 2
 	HEADER_SIZE        = NODE_TYPE_SIZE + NKEYS_SIZE
 	POINTER_SIZE       = 8
-	OFFSET_SIZE        = 4
+	OFFSET_SIZE        = 2
 	KEY_SIZE           = 2
 	VAL_SIZE           = 2
 	KV_HEADER_SIZE     = KEY_SIZE + VAL_SIZE
@@ -58,13 +59,13 @@ func (node BNode) setHeader(btype uint16, nkeys uint16) {
 
 // ptr fns
 func (node BNode) getPtr(idx uint16) uint64 {
-	helpers.Assert(idx < node.nkeys())
+	helpers.Assert(idx < node.nkeys()-1)
 	pos_ptr := HEADER_SIZE + idx*POINTER_SIZE
 	return binary.LittleEndian.Uint64(node[pos_ptr:])
 }
 
 func (node BNode) setPtr(idx uint16, val uint64) {
-	helpers.Assert(idx < node.nkeys())
+	helpers.Assert(idx < node.nkeys()-1)
 	pos_ptr := HEADER_SIZE + idx*POINTER_SIZE
 	binary.LittleEndian.PutUint64(node[pos_ptr:], val)
 }
@@ -80,15 +81,20 @@ func (node BNode) setOffset(idx uint16, offsetVal uint16) {
 	binary.LittleEndian.PutUint16(node[pos:], offsetVal)
 }
 
+func (node BNode) getKvStartPosition() uint16 {
+	return HEADER_SIZE + POINTER_SIZE*node.nkeys() + OFFSET_SIZE*node.nkeys()
+}
+
 // obtaining kv position given the index
 func (node BNode) kvPos(idx uint16) uint16 {
 	helpers.Assert(idx <= node.nkeys())
-	return node.getOffset(idx)
+	return node.getOffset(idx) + node.getKvStartPosition()
 }
 
 func (node BNode) getKeyAndVal(idx uint16) (ByteArr, ByteArr) {
-	helpers.Assert(idx < node.nkeys())
+	helpers.Assert(idx < node.nkeys()-1)
 	pos := node.kvPos(idx)
+
 	klen := binary.LittleEndian.Uint16(node[pos:])
 	vlen := binary.LittleEndian.Uint16(node[pos+KEY_SIZE:])
 	return ByteArr(node[pos+KV_HEADER_SIZE:][:klen]), ByteArr(node[pos+KV_HEADER_SIZE+klen:][:vlen])
@@ -130,9 +136,46 @@ func leafUpsert(new, old BNode, idx uint16, key, val ByteArr, isUpdate uint16) {
 	nodeAppendRange(new, old, idx+1, idx+(isUpdate&0x01), old.nkeys()-(idx+(isUpdate&0x01)))
 }
 
+func nodeLookupLE(node BNode, key ByteArr) uint16 {
+	for i := uint16(0); i < node.nkeys(); i++ {
+		nodeKey, _ := node.getKeyAndVal(i)
+		switch bytes.Compare(nodeKey, key) {
+		case 0:
+			return i
+		case 1:
+			return i - 1
+		}
+	}
+
+	return node.nkeys() - 1
+}
+
+// todok
+/*
+idx := nodeLookupLE(node, key)  // node.getKey(idx) <= key
+if bytes.Equal(key, node.getKey(idx)) {
+    leafUpdate(new, node, idx, key, val)   // found, update it
+} else {
+    leafInsert(new, node, idx+1, key, val) // not found. insert
+}
+*/
+
+func nodeSplit2(left, right, old BNode) {
+	helpers.Assert(old.nkeys() >= 2)
+	nleft := old.nkeys() / 2
+	left_bytes := func() uint16 {
+		return HEADER_SIZE + POINTER_SIZE*nleft + OFFSET_SIZE*nleft +
+			old.getOffset(nleft)
+	} // todo -> kinda sussy cause getOffset provides offset wrt node
+
+	for left_bytes() > BTREE_PAGE_SIZE {
+		nleft--
+	}
+}
+
 func Run() {
 	node := BNode(make([]byte, BTREE_PAGE_SIZE))
-	node.setHeader(uint16(Leaf), 2)
+	node.setHeader(uint16(Leaf), 3)
 	// ^type       ^ number of keys
 	nodeAppendKV(node, 0, 0, []byte("k1"), []byte("hi"))
 	// ^ 1st KV
@@ -141,6 +184,9 @@ func Run() {
 
 	fmt.Println(NodeType(node.btype()))
 	fmt.Println(node.nkeys())
-	k, v := node.getKeyAndVal(1)
+	k, v := node.getKeyAndVal(0)
+	fmt.Printf("%s := %s\n", k, v)
+
+	k, v = node.getKeyAndVal(1)
 	fmt.Printf("%s := %s\n", k, v)
 }
