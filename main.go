@@ -1,6 +1,8 @@
 package main
 
-import "beaver/btreeplus"
+import (
+	"beaver/btreeplus"
+)
 
 func main() {
 	btreeplus.Run()

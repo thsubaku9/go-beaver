@@ -1,6 +1,14 @@
 package btreeplus
 
-import "bytes"
+import (
+	"bytes"
+	"fmt"
+)
+
+const (
+	KEY_LIM = 20
+	VAL_LIM = 1000
+)
 
 type BTree struct {
 	// root pointer (a nonzero page number)
@@ -9,6 +17,30 @@ type BTree struct {
 	get func(uint64) BNode // read data from a page number
 	new func(BNode) uint64 // allocate a new page number with data
 	del func(uint64)       // deallocate a page number
+}
+
+func checkLimit(key, val ByteArr) error {
+	if len(key) > KEY_LIM {
+		return fmt.Errorf("Key limit exceeded")
+	}
+
+	if len(val) > VAL_LIM {
+		return fmt.Errorf("Val limit exceeded")
+	}
+
+	return nil
+}
+
+func nodeReplaceKidN(tree *BTree, new, old BNode, idx uint16, kids ...BNode) {
+	inc := uint16(len(kids))
+	new.setHeader(uint16(InternalNode), old.nkeys()+inc-1)
+	nodeAppendRange(new, old, 0, 0, idx)
+
+	for i, node := range kids {
+		k, _ := node.getKeyAndVal(0)
+		nodeAppendKV(new, idx+uint16(i), tree.new(node), k, nil)
+	}
+	nodeAppendRange(new, old, idx+inc, idx+1, old.nkeys()-(idx+1))
 }
 
 func treeInsert(tree *BTree, node BNode, key []byte, val []byte) BNode {
@@ -40,14 +72,44 @@ func treeInsert(tree *BTree, node BNode, key []byte, val []byte) BNode {
 	return new
 }
 
-func nodeReplaceKidN(tree *BTree, new, old BNode, idx uint16, kids ...BNode) {
-	inc := uint16(len(kids))
-	new.setHeader(uint16(InternalNode), old.nkeys()+inc-1)
-	nodeAppendRange(new, old, 0, 0, idx)
+func (tree *BTree) Insert(key, val ByteArr) error {
 
-	for i, node := range kids {
-		k, _ := node.getKeyAndVal(0)
-		nodeAppendKV(new, idx+uint16(i), tree.new(node), k, nil)
+	if err := checkLimit(key, val); err != nil {
+		return err
 	}
-	nodeAppendRange(new, old, idx+inc, idx+1, old.nkeys()-(idx+1))
+
+	// sentinel value
+	if tree.root == 0 {
+		root := NewBnode()
+		root.setHeader(uint16(LeafNode), 2)
+		nodeAppendKV(root, 0, 0, nil, nil)
+		nodeAppendKV(root, 1, 0, key, val)
+		tree.root = tree.new(root)
+		return nil
+	}
+
+	node := treeInsert(tree, tree.get(tree.root), key, val)
+
+	nsplit, split := nodeSplit3(node)
+	defer tree.del(tree.root)
+
+	if nsplit > 1 {
+		root := NewBnode()
+		root.setHeader(uint16(InternalNode), nsplit)
+
+		for i, knode := range split[:nsplit] {
+			ptr := tree.new(knode)
+			key, _ := knode.getKeyAndVal(0)
+			nodeAppendKV(root, uint16(i), ptr, key, nil)
+		}
+		tree.root = tree.new(root)
+	} else {
+		tree.root = tree.new(split[0])
+	}
+
+	return nil
+}
+
+func (tree *BTree) Delete(key ByteArr) (bool, error) {
+	return false, nil
 }

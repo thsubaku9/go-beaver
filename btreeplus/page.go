@@ -61,6 +61,10 @@ func init() {
 	helpers.Assert(node1max <= BTREE_PAGE_SIZE) // maximum KV
 }
 
+func NewBnode() BNode {
+	return BNode(make([]byte, BTREE_PAGE_SIZE))
+}
+
 // header fns
 func (node BNode) btype() uint16 {
 	return binary.LittleEndian.Uint16(node[BASE:NODE_TYPE_SIZE])
