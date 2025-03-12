@@ -245,6 +245,18 @@ func nodeSplit3(old BNode) (uint16, [3]BNode) {
 	return 3, [3]BNode{leftleft, middle, right} // 3 nodes
 }
 
+func leafDelete(new, old BNode, idx uint16) {
+	// todok
+}
+
+func nodeMerge(new, left, right BNode) {
+	// todok
+}
+
+func nodeReplace2Kid(new, old BNode, idx uint16, ptr uint64, key ByteArr) {
+	// todok
+}
+
 func Run() {
 	node := BNode(make([]byte, BTREE_PAGE_SIZE))
 	node.setHeader(uint16(LeafNode), 2)
