@@ -6,9 +6,9 @@ type BTree struct {
 	// root pointer (a nonzero page number)
 	root uint64
 	// callbacks for managing on-disk pages
-	get func(uint64) []byte // read data from a page number
-	new func([]byte) uint64 // allocate a new page number with data
-	del func(uint64)        // deallocate a page number
+	get func(uint64) BNode // read data from a page number
+	new func(BNode) uint64 // allocate a new page number with data
+	del func(uint64)       // deallocate a page number
 }
 
 func treeInsert(tree *BTree, node BNode, key []byte, val []byte) BNode {
