@@ -6,11 +6,6 @@ import (
 	"fmt"
 )
 
-const (
-	KEY_LIM = 20
-	VAL_LIM = 1000
-)
-
 type BTree struct {
 	// root pointer (a nonzero page number)
 	root uint64
@@ -21,11 +16,11 @@ type BTree struct {
 }
 
 func checkLimit(key, val ByteArr) error {
-	if len(key) > KEY_LIM {
+	if len(key) > BTREE_MAX_KEY_SIZE {
 		return fmt.Errorf("Key limit exceeded")
 	}
 
-	if len(val) > VAL_LIM {
+	if len(val) > BTREE_MAX_VAL_SIZE {
 		return fmt.Errorf("Val limit exceeded")
 	}
 
@@ -192,7 +187,7 @@ func nodeDelete(tree *BTree, node BNode, idx uint16, key ByteArr) BNode {
 
 func (tree *BTree) Delete(key ByteArr) (bool, error) {
 
-	helpers.Assert(len(key) == 0)
+	helpers.Assert(len(key) != 0)
 	helpers.Assert(len(key) > BTREE_MAX_KEY_SIZE)
 
 	updated := treeDelete(tree, tree.get(tree.root), key)
@@ -209,4 +204,31 @@ func (tree *BTree) Delete(key ByteArr) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func (tree *BTree) Get(key ByteArr) (retKey, retVal ByteArr) {
+	retKey = key
+	helpers.Assert(len(key) != 0 && len(key) < BTREE_MAX_KEY_SIZE)
+	if tree.root == 0 {
+		return nil, nil
+	}
+
+	var node BNode
+	for node = tree.get(tree.root); NodeType(node.btype()) != LeafNode; {
+		idx := nodeLookupLE(node, key)
+		kaddr := node.getPtr(idx)
+		if kaddr == 0 {
+			return nil, nil
+		}
+		node = tree.get(kaddr)
+	}
+
+	idx := nodeLookupLE(node, key)
+
+	_k, _v := node.getKeyAndVal(idx)
+	if bytes.Equal(_k, key) {
+		return _k, _v
+	}
+
+	return nil, nil
 }
