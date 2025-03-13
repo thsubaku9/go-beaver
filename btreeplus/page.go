@@ -65,7 +65,7 @@ func NewBnode() BNode {
 	return BNode(make([]byte, BTREE_PAGE_SIZE))
 }
 
-// header fns
+// node type
 func (node BNode) btype() uint16 {
 	return binary.LittleEndian.Uint16(node[BASE:NODE_TYPE_SIZE])
 }
@@ -79,13 +79,14 @@ func (node BNode) setHeader(btype uint16, nkeys uint16) {
 	binary.LittleEndian.PutUint16(node[BASE+NODE_TYPE_SIZE:BASE+NODE_TYPE_SIZE+NKEYS_SIZE], nkeys)
 }
 
-// ptr fns
+// get ptr fn
 func (node BNode) getPtr(idx uint16) uint64 {
 	helpers.Assert(idx < node.nkeys())
 	pos_ptr := HEADER_SIZE + idx*POINTER_SIZE
 	return binary.LittleEndian.Uint64(node[pos_ptr:])
 }
 
+// set ptr fn
 func (node BNode) setPtr(idx uint16, val uint64) {
 	helpers.Assert(idx < node.nkeys())
 	pos_ptr := HEADER_SIZE + idx*POINTER_SIZE
@@ -240,10 +241,10 @@ func nodeSplit3(old BNode) (uint16, [3]BNode) {
 	}
 
 	leftleft := BNode(make([]byte, BTREE_PAGE_SIZE))
-	middle := BNode(make([]byte, BTREE_PAGE_SIZE))
-	nodeSplit2(leftleft, middle, left)
+	leftright := BNode(make([]byte, BTREE_PAGE_SIZE))
+	nodeSplit2(leftleft, leftright, left)
 	helpers.Assert(leftleft.nbytes() <= BTREE_PAGE_SIZE)
-	return 3, [3]BNode{leftleft, middle, right} // 3 nodes
+	return 3, [3]BNode{leftleft, leftright, right} // 3 nodes
 }
 
 func leafDelete(new, old BNode, idx uint16) {
@@ -254,11 +255,42 @@ func leafDelete(new, old BNode, idx uint16) {
 }
 
 func nodeMerge(new, left, right BNode) {
-	// todok
+	new.setHeader(left.btype(), left.nkeys()+right.nkeys())
+
+	idx, lptr, rptr := uint16(0), uint16(0), uint16(0)
+
+	for lptr < left.nkeys() && rptr < right.nkeys() {
+		kleft, vleft := left.getKeyAndVal(lptr)
+		kright, vright := right.getKeyAndVal(rptr)
+
+		if bytes.Compare(kleft, kright) <= 0 {
+			nodeAppendKV(new, idx, left.getPtr(lptr), kleft, vleft)
+			lptr++
+		} else {
+			nodeAppendKV(new, idx, right.getPtr(lptr), kright, vright)
+			rptr++
+		}
+
+		idx++
+	}
+
+	for lptr < left.nkeys() {
+		kleft, vleft := left.getKeyAndVal(lptr)
+		nodeAppendKV(new, idx, left.getPtr(lptr), kleft, vleft)
+		lptr++
+		idx++
+	}
+
+	for rptr < right.nkeys() {
+		kright, vright := right.getKeyAndVal(rptr)
+		nodeAppendKV(new, idx, right.getPtr(lptr), kright, vright)
+		rptr++
+		idx++
+	}
 }
 
 func nodeReplace2Kid(new, old BNode, idx uint16, ptr uint64, key ByteArr) {
-	// todok
+	// todok -> wtf am I supposed to do here ?
 }
 
 func Run() {

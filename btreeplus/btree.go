@@ -110,6 +110,15 @@ func (tree *BTree) Insert(key, val ByteArr) error {
 	return nil
 }
 
+func shouldMerge(tree *BTree, node BNode, idx uint16, updated BNode) (int, BNode) {
+	if updated.nbytes() > BTREE_PAGE_SIZE/4 {
+		return 0, BNode{}
+	}
+
+	// todok
+	return 0, BNode{}
+}
+
 func (tree *BTree) Delete(key ByteArr) (bool, error) {
 	return false, nil
 }
