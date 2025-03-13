@@ -148,6 +148,7 @@ func nodeAppendKV(bnode BNode, idx uint16, ptr uint64, key ByteArr, val ByteArr)
 	bnode.setOffset(idx+1, bnode.getOffset(idx)+KV_HEADER_SIZE+uint16((len(key)+len(val))))
 }
 
+// appends from [srcOld, srcOld + n) -> [dstNew, dstNew +n)
 func nodeAppendRange(new, old BNode, dstNew, srcOld, n uint16) {
 
 	for i := uint16(0); i < n; i++ {
@@ -160,7 +161,7 @@ func nodeAppendRange(new, old BNode, dstNew, srcOld, n uint16) {
 }
 
 func leafUpsert(new, old BNode, idx uint16, key, val ByteArr, isUpdate uint16) {
-	new.setHeader(uint16(LeafNode), old.nkeys()+1)
+	new.setHeader(uint16(LeafNode), old.nkeys()+1-(isUpdate&0x01))
 	nodeAppendRange(new, old, 0, 0, idx)
 	nodeAppendKV(new, idx, 0, key, val)
 	nodeAppendRange(new, old, idx+1, idx+(isUpdate&0x01), old.nkeys()-(idx+(isUpdate&0x01)))
@@ -180,16 +181,6 @@ func nodeLookupLE(node BNode, key ByteArr) uint16 {
 
 	return node.nkeys() - 1
 }
-
-// todok
-/*
-idx := nodeLookupLE(node, key)  // node.getKey(idx) <= key
-if bytes.Equal(key, node.getKey(idx)) {
-    leafUpdate(new, node, idx, key, val)   // found, update it
-} else {
-    leafInsert(new, node, idx+1, key, val) // not found. insert
-}
-*/
 
 func nodeSplit2(left, right, old BNode) {
 	helpers.Assert(old.nkeys() >= 2)
@@ -254,6 +245,7 @@ func leafDelete(new, old BNode, idx uint16) {
 	nodeAppendRange(new, old, idx, idx+1, old.nkeys()-(idx+1))
 }
 
+// merge two pages into new one
 func nodeMerge(new, left, right BNode) {
 	new.setHeader(left.btype(), left.nkeys()+right.nkeys())
 
@@ -290,7 +282,10 @@ func nodeMerge(new, left, right BNode) {
 }
 
 func nodeReplace2Kid(new, old BNode, idx uint16, ptr uint64, key ByteArr) {
-	// todok -> wtf am I supposed to do here ?
+	new.setHeader(old.btype(), old.nkeys()-1)
+	nodeAppendRange(new, old, 0, 0, idx)
+	nodeAppendKV(new, idx, ptr, key, nil)
+	nodeAppendRange(new, old, idx+1, idx+2, old.nkeys()-(idx+1))
 }
 
 func Run() {
