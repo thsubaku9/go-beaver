@@ -71,11 +71,11 @@ func TestNodeLookup(t *testing.T) {
 			v: "gareth bale",
 		},
 		{
-			k: "k3",
+			k: "k5",
 			v: "neymar santos",
 		},
 		{
-			k: "k4",
+			k: "k7",
 			v: "lebron james",
 		},
 	}
@@ -88,8 +88,8 @@ func TestNodeLookup(t *testing.T) {
 
 	k, v := node.getKeyAndVal(idx)
 
-	assert.GreaterOrEqual(t, string(k), "k3")
-	assert.Contains(t, []string{entries[3].v, entries[4].v}, string(v))
+	assert.GreaterOrEqual(t, string(k), "k2")
+	assert.Contains(t, []string{entries[2].v}, string(v))
 }
 
 func TestNodeSplit2(t *testing.T) {

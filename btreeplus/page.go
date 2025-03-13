@@ -165,6 +165,7 @@ func leafUpsert(new, old BNode, idx uint16, key, val ByteArr, isUpdate uint16) {
 	nodeAppendRange(new, old, idx+1, idx+(isUpdate&0x01), old.nkeys()-(idx+(isUpdate&0x01)))
 }
 
+// fetch the key who's value is -le param key
 func nodeLookupLE(node BNode, key ByteArr) uint16 {
 	for i := uint16(0); i < node.nkeys(); i++ {
 		nodeKey, _ := node.getKeyAndVal(i)
@@ -246,7 +247,10 @@ func nodeSplit3(old BNode) (uint16, [3]BNode) {
 }
 
 func leafDelete(new, old BNode, idx uint16) {
-	// todok
+	helpers.Assert(idx <= old.nkeys())
+	new.setHeader(old.btype(), old.nkeys()-1)
+	nodeAppendRange(new, old, 0, 0, idx)
+	nodeAppendRange(new, old, idx, idx+1, old.nkeys()-(idx+1))
 }
 
 func nodeMerge(new, left, right BNode) {

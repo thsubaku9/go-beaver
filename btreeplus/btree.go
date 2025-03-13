@@ -46,8 +46,8 @@ func nodeReplaceKidN(tree *BTree, new, old BNode, idx uint16, kids ...BNode) {
 func treeInsert(tree *BTree, node BNode, key []byte, val []byte) BNode {
 	// The extra size allows it to exceed 1 page temporarily.
 	new := BNode(make([]byte, 2*BTREE_PAGE_SIZE))
-	// where to insert the key?
-	idx := nodeLookupLE(node, key) // node.getKey(idx) <= key
+
+	idx := nodeLookupLE(node, key)
 	switch node.btype() {
 	case uint16(LeafNode): // leaf node
 		k, _ := node.getKeyAndVal(idx)
