@@ -204,7 +204,7 @@ func nodeSplit2(left, right, old BNode) {
 	helpers.Assert(nleft >= 1)
 
 	right_bytes := func() uint16 {
-		return old.nbytes() - left_bytes() + KV_HEADER_SIZE
+		return old.nbytes() - left_bytes() + HEADER_SIZE
 	}
 
 	for right_bytes() > BTREE_PAGE_SIZE {

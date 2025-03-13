@@ -49,3 +49,74 @@ func TestInsertionKVLeaf(t *testing.T) {
 	}
 
 }
+
+func TestNodeLookup(t *testing.T) {
+	node := NewBnode()
+	node.setHeader(uint16(LeafNode), 5)
+
+	entries := []struct {
+		k string
+		v string
+	}{
+		{
+			k: "k0",
+			v: "lionel messi",
+		},
+		{
+			k: "k1",
+			v: "cristiano ronaldo",
+		},
+		{
+			k: "k2",
+			v: "gareth bale",
+		},
+		{
+			k: "k3",
+			v: "neymar santos",
+		},
+		{
+			k: "k4",
+			v: "lebron james",
+		},
+	}
+
+	for idx, e := range entries {
+		nodeAppendKV(node, uint16(idx), 0, ByteArr(e.k), ByteArr(e.v))
+	}
+
+	idx := nodeLookupLE(node, ByteArr("k3"))
+
+	k, v := node.getKeyAndVal(idx)
+
+	assert.GreaterOrEqual(t, string(k), "k3")
+	assert.Contains(t, []string{entries[3].v, entries[4].v}, string(v))
+}
+
+func TestNodeSplit2(t *testing.T) {
+	node := NewBnode()
+	node.setHeader(uint16(LeafNode), 2)
+
+	entries := []struct {
+		k string
+		v string
+	}{
+		{
+			k: "k0",
+			v: "lionel messi",
+		},
+		{
+			k: "k1",
+			v: "cristiano ronaldo",
+		},
+	}
+
+	for idx, e := range entries {
+		nodeAppendKV(node, uint16(idx), 0, ByteArr(e.k), ByteArr(e.v))
+	}
+
+	lnode, rnode := NewBnode(), NewBnode()
+	nodeSplit2(lnode, rnode, node)
+
+	assert.Equal(t, uint16(1), lnode.nkeys())
+	assert.Equal(t, uint16(1), rnode.nkeys())
+}
