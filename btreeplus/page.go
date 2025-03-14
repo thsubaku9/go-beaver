@@ -281,6 +281,7 @@ func nodeMerge(new, left, right BNode) {
 	}
 }
 
+// update new node as the old node with the idx and idx+1 nodes squashed as one and ptr pointing to this squashed node
 func nodeReplace2Kid(new, old BNode, idx uint16, ptr uint64, key ByteArr) {
 	new.setHeader(old.btype(), old.nkeys()-1)
 	nodeAppendRange(new, old, 0, 0, idx)

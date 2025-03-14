@@ -17,11 +17,11 @@ type BTree struct {
 
 func checkLimit(key, val ByteArr) error {
 	if len(key) > BTREE_MAX_KEY_SIZE {
-		return fmt.Errorf("Key limit exceeded")
+		return fmt.Errorf("key limit exceeded")
 	}
 
 	if len(val) > BTREE_MAX_VAL_SIZE {
-		return fmt.Errorf("Val limit exceeded")
+		return fmt.Errorf("val limit exceeded")
 	}
 
 	return nil
@@ -90,15 +90,15 @@ func (tree *BTree) Insert(key, val ByteArr) error {
 	defer tree.del(tree.root)
 
 	if nsplit > 1 {
-		root := NewBnode()
-		root.setHeader(uint16(InternalNode), nsplit)
+		newRoot := NewBnode()
+		newRoot.setHeader(uint16(InternalNode), nsplit)
 
 		for i, knode := range split[:nsplit] {
-			ptr := tree.new(knode)
-			key, _ := knode.getKeyAndVal(0)
-			nodeAppendKV(root, uint16(i), ptr, key, nil)
+			pagePtr := tree.new(knode)
+			splitKey, _ := knode.getKeyAndVal(0)
+			nodeAppendKV(newRoot, uint16(i), pagePtr, splitKey, nil)
 		}
-		tree.root = tree.new(root)
+		tree.root = tree.new(newRoot)
 	} else {
 		tree.root = tree.new(split[0])
 	}
@@ -152,32 +152,32 @@ func treeDelete(tree *BTree, node BNode, key ByteArr) BNode {
 // nodeDelete takes care of recursing the internal nodes + merging
 func nodeDelete(tree *BTree, node BNode, idx uint16, key ByteArr) BNode {
 	childptr := node.getPtr(idx)
-	updated := treeDelete(tree, tree.get(childptr), key)
+	updatedChildPage := treeDelete(tree, tree.get(childptr), key)
 
-	if len(updated) == 0 {
+	if len(updatedChildPage) == 0 {
 		return BNode{}
 	}
 
 	defer tree.del(childptr)
 	new := NewBnode()
 
-	mergeDir, sibling := shouldMerge(tree, node, idx, updated)
+	mergeDir, sibling := shouldMerge(tree, node, idx, updatedChildPage)
 
 	switch {
-	case mergeDir == 0 && updated.nkeys() == 0:
+	case mergeDir == 0 && updatedChildPage.nkeys() == 0:
 		helpers.Assert(node.nkeys() == 1 && idx == 0)
 		new.setHeader(uint16(InternalNode), 0)
-	case mergeDir == 0 && updated.nkeys() > 0:
-		nodeReplaceKidN(tree, new, node, idx, updated)
+	case mergeDir == 0 && updatedChildPage.nkeys() > 0:
+		nodeReplaceKidN(tree, new, node, idx, updatedChildPage)
 	case mergeDir == -1: // left dir
 		merged := NewBnode()
-		nodeMerge(merged, sibling, updated)
+		nodeMerge(merged, sibling, updatedChildPage)
 		defer tree.del(node.getPtr(idx - 1))
 		newKey, _ := merged.getKeyAndVal(0)
 		nodeReplace2Kid(new, node, idx-1, tree.new(merged), newKey)
 	case mergeDir == 1: // right dir
 		merged := NewBnode()
-		nodeMerge(merged, updated, sibling)
+		nodeMerge(merged, updatedChildPage, sibling)
 		tree.del(node.getPtr(idx + 1))
 		newKey, _ := merged.getKeyAndVal(0)
 		nodeReplace2Kid(new, node, idx, tree.new(merged), newKey)
@@ -188,11 +188,11 @@ func nodeDelete(tree *BTree, node BNode, idx uint16, key ByteArr) BNode {
 func (tree *BTree) Delete(key ByteArr) (bool, error) {
 
 	helpers.Assert(len(key) != 0)
-	helpers.Assert(len(key) > BTREE_MAX_KEY_SIZE)
+	helpers.Assert(len(key) < BTREE_MAX_KEY_SIZE)
 
 	updated := treeDelete(tree, tree.get(tree.root), key)
 	if len(updated) == 0 {
-		return false, fmt.Errorf("Key not found")
+		return false, fmt.Errorf("key not found")
 	}
 
 	defer tree.del(tree.root)
