@@ -1,10 +1,14 @@
 package kvstore
 
-import "beaver/btreeplus"
+import (
+	"beaver/btreeplus"
+	"beaver/helpers"
+	"syscall"
+)
 
 type KV struct {
 	Path string
-	df   int
+	fd   int
 	tree btreeplus.BTree
 	// todo more
 }
@@ -34,5 +38,22 @@ func (db *KV) Del(key btreeplus.ByteArr) (isDeleted bool, err error) {
 }
 
 func performFileUpdate(db *KV) error {
+	return helpers.ErrMap(db, []func(*KV) error{
+		writePages,
+		fsync, // forces previous and next step to be ordered (page cache stuff)
+		updateRoot,
+		fsync,
+	})
+}
+
+func writePages(db *KV) error {
 	return nil
+}
+
+func updateRoot(db *KV) error {
+	return nil
+}
+
+func fsync(db *KV) error {
+	return syscall.Fsync(db.fd)
 }
