@@ -71,17 +71,58 @@ func extendMmap(db *KV, size uint64) error {
 	return nil
 }
 
+func mmapInit(fp *os.File) (int, []byte, error) {
+	fileStat, _ := fp.Stat()
+
+	mmapSize := 64 << 10
+
+	for mmapSize < int(fileStat.Size()) {
+		mmapSize += mmapSize
+	}
+
+	chunk, err := unix.Mmap(int(fp.Fd()), 0, mmapSize,
+		unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED) // rw
+
+	if err != nil {
+		return 0, nil, fmt.Errorf("mmap :%w", err)
+	}
+
+	return int(fileStat.Size()), chunk, nil
+}
+
+func ProvisionKV(path string) *KV {
+	return &KV{Path: path}
+}
+
 func (db *KV) Open() error {
+	// open file and stats
 	filePtr, err := os.OpenFile(db.Path, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return fmt.Errorf("OpenFile: %w", err)
 	}
 	db.filePtr = filePtr
+	db.fd = int(filePtr.Fd())
 
-	fileStat, _ := filePtr.Stat()
-	fileStat.Size()
+	// peform mmapping
+	fileSize, chunk, err := mmapInit(db.filePtr)
+	if err != nil {
+		return fmt.Errorf("KV.Open: %w", err)
+	}
+
+	db.mmap = struct {
+		totalMmapSizeBytes uint64
+		totalFileSizeBytes uint64
+		chunks             [][]byte
+	}{
+		totalMmapSizeBytes: uint64(len(chunk)),
+		totalFileSizeBytes: uint64(fileSize),
+		chunks:             [][]byte{chunk},
+	}
 
 	db.tree = btreeplus.NewBTree(db.pageRead, db.pageAppend, db.pageDelete)
+
+	readRoot(db, uint64(fileSize))
+
 	return nil
 }
 
