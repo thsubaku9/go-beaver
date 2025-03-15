@@ -3,6 +3,7 @@ package kvstore
 import (
 	"beaver/btreeplus"
 	"beaver/helpers"
+	"encoding/binary"
 	"fmt"
 	"os"
 
@@ -22,9 +23,12 @@ type KV struct {
 	page struct {
 		flushedCount uint64
 		temp         []btreeplus.BNode
+		toDelete     []uint64
 	}
-	// todo more
+	lastUpdateFailed bool
 }
+
+// OS HELPER CODE
 
 func extendFile(db *KV, size uint64) error {
 	if db.mmap.totalFileSizeBytes >= size {
@@ -81,6 +85,13 @@ func (db *KV) Open() error {
 	return nil
 }
 
+func (db *KV) Close() error {
+	for _, mmapChunk := range db.mmap.chunks {
+		helpers.Assert(unix.Munmap(mmapChunk) == nil)
+	}
+	return db.filePtr.Close()
+}
+
 func (db *KV) pageRead(ptr uint64) btreeplus.BNode {
 	start := uint64(0)
 
@@ -102,7 +113,28 @@ func (db *KV) pageAppend(bnode btreeplus.BNode) uint64 {
 }
 
 func (db *KV) pageDelete(ptr uint64) {
+	db.page.toDelete = append(db.page.toDelete, ptr)
+}
 
+func updateOrRevert(db *KV, meta []byte) error {
+	if db.lastUpdateFailed {
+		updateRoot(db)
+		fsync(db)
+		db.lastUpdateFailed = false
+	}
+	// 2-phase update
+	err := performFileUpdate(db)
+	// revert on error
+	if err != nil {
+		// the in-memory states can be reverted immediately to allow reads
+		loadMeta(db, meta)
+		// discard temporaries
+		db.page.temp = db.page.temp[:0]
+		// the on-disk meta page is in an unknown state;
+		// mark it to be rewritten on later recovery.
+		db.lastUpdateFailed = true
+	}
+	return err
 }
 
 func (db *KV) Get(key btreeplus.ByteArr) (val btreeplus.ByteArr, exists bool) {
@@ -111,10 +143,11 @@ func (db *KV) Get(key btreeplus.ByteArr) (val btreeplus.ByteArr, exists bool) {
 }
 
 func (db *KV) Set(key, val btreeplus.ByteArr) error {
+	meta := saveMeta(db)
 	if err := db.tree.Insert(key, val); err != nil {
-		return nil
+		return err
 	}
-	return performFileUpdate(db)
+	return updateOrRevert(db, meta)
 }
 
 func (db *KV) Del(key btreeplus.ByteArr) (isDeleted bool, err error) {
@@ -158,10 +191,44 @@ func writePages(db *KV) error {
 	return nil
 }
 
-func updateRoot(db *KV) error {
+func fsync(db *KV) error {
+	return unix.Fsync(db.fd)
+}
+
+// META RELATED FNS
+
+const DB_SIG = "BEAVER01"
+
+// | sig | root_ptr | page_used |
+// | 8B |    8B    |     8B    |
+func saveMeta(db *KV) []byte {
+	var data [24]byte
+	copy(data[:8], []byte(DB_SIG))
+	binary.LittleEndian.PutUint64(data[8:], db.tree.GetRoot())
+	binary.LittleEndian.PutUint64(data[16:], db.page.flushedCount)
+	return data[:]
+}
+
+func loadMeta(db *KV, data []byte) {
+	helpers.Assert(DB_SIG == string(data[0:8]))
+	db.tree.SetRoot(binary.LittleEndian.Uint64(data[8:]))
+	db.page.flushedCount = binary.LittleEndian.Uint64(data[16:])
+}
+
+func readRoot(db *KV, fileSize uint64) error {
+	if fileSize == 0 {
+		db.page.flushedCount = 1
+		return nil
+	}
+
+	data := db.mmap.chunks[0]
+	loadMeta(db, data)
 	return nil
 }
 
-func fsync(db *KV) error {
-	return unix.Fsync(db.fd)
+func updateRoot(db *KV) error {
+	if _, err := unix.Pwrite(db.fd, saveMeta(db), 0); err != nil {
+		return fmt.Errorf("write meta page: %w", err)
+	}
+	return nil
 }

@@ -1,9 +1,7 @@
 package main
 
-import "beaver/btreeplus"
-
 func main() {
-	btreeplus.Run()
+	// btreeplus.Run()
 
 	// fl, err := os.OpenFile("/Users/kernel/Documents/Playgrounds/go-beaver/go-beaver/temp.etc", os.O_RDWR|os.O_CREATE, 06444)
 	// if err != nil {
@@ -27,4 +25,5 @@ func main() {
 
 	// unix.Munmap(mmap)
 	// fl.Close()
+
 }

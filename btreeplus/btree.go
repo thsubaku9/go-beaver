@@ -242,3 +242,11 @@ func (tree *BTree) Get(key ByteArr) (retKey, retVal ByteArr) {
 
 	return nil, nil
 }
+
+func (tree *BTree) GetRoot() uint64 {
+	return tree.root
+}
+
+func (tree *BTree) SetRoot(rootPtr uint64) {
+	tree.root = rootPtr
+}
