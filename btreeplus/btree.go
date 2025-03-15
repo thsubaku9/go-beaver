@@ -15,6 +15,16 @@ type BTree struct {
 	del func(uint64)       // deallocate a page number
 }
 
+func NewBTree(get func(uint64) BNode,
+	new func(BNode) uint64,
+	del func(uint64)) BTree {
+	return BTree{
+		get: get,
+		new: new,
+		del: del,
+	}
+}
+
 func checkLimit(key, val ByteArr) error {
 	if len(key) > BTREE_MAX_KEY_SIZE {
 		return fmt.Errorf("key limit exceeded")
