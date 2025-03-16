@@ -2,42 +2,90 @@ package kvstore
 
 import (
 	"beaver/btreeplus"
-	"beaver/helpers"
 	"encoding/binary"
 )
 
 // node format:
-// | next | pointers | unused |
-// |  8B  |   n*8B   |   ...  |
+// |pointers | unused |
+// | n*8B    |   ...  |
 type LNode []byte
 
-const FREE_LIST_HEADER_SIZE = 8
-const POINTER_SIZE = 8
+// header format:
+// |magic| num of pointers | head position | tail position | prev file pointer | next file point
+// | 4B  | 8B | 8B | 8B | 8B | 8B
+
+const FL_SIG = "FL01"
+const FREE_LIST_HEADER_SIZE = len(FL_SIG) + 5*HEADER_ENTRY_SIZE
+const HEADER_ENTRY_SIZE = 8
 const FREE_LIST_CAP = (btreeplus.BTREE_PAGE_SIZE - FREE_LIST_HEADER_SIZE) / 8
 
-// getters & setters
-func (node LNode) getNext() uint64 {
-	return binary.LittleEndian.Uint64(node[0:FREE_LIST_HEADER_SIZE])
+func PopulateFreeListNode(lnode LNode, pointerCount, headPos, tailPos, prevFP, nextFp uint64) {
+	copy(lnode[0:len(FL_SIG)], []byte(FL_SIG))
+
 }
 
-func (node LNode) setNext(next uint64) {
-	binary.LittleEndian.PutUint64(node[0:FREE_LIST_HEADER_SIZE], next)
+func (lnode LNode) getTotalPointers() uint64 {
+	return binary.LittleEndian.Uint64(lnode[len(FL_SIG) : len(FL_SIG)+HEADER_ENTRY_SIZE])
+}
+
+func (lnode LNode) setTotalPointers(v uint64) {
+	binary.LittleEndian.PutUint64(lnode[len(FL_SIG):len(FL_SIG)+HEADER_ENTRY_SIZE], v)
+}
+
+func (lnode LNode) getHeadPosition() uint64 {
+	return binary.LittleEndian.Uint64(lnode[len(FL_SIG)+HEADER_ENTRY_SIZE : len(FL_SIG)+2*HEADER_ENTRY_SIZE])
+}
+
+func (lnode LNode) setHeadPosition(v uint64) {
+	binary.LittleEndian.PutUint64(lnode[len(FL_SIG)+HEADER_ENTRY_SIZE:len(FL_SIG)+2*HEADER_ENTRY_SIZE], v)
+}
+
+func (lnode LNode) getTailPosition() uint64 {
+	return binary.LittleEndian.Uint64(lnode[len(FL_SIG)+(2*HEADER_ENTRY_SIZE) : len(FL_SIG)+(3*HEADER_ENTRY_SIZE)])
+}
+
+func (lnode LNode) setTailPosition(v uint64) {
+	binary.LittleEndian.PutUint64(lnode[len(FL_SIG)+(2*HEADER_ENTRY_SIZE):len(FL_SIG)+(3*HEADER_ENTRY_SIZE)], v)
+}
+
+func (lnode LNode) prevFilePointer() (uint64, bool) {
+	val := binary.LittleEndian.Uint64(lnode[len(FL_SIG)+(3*HEADER_ENTRY_SIZE) : len(FL_SIG)+(4*HEADER_ENTRY_SIZE)])
+
+	return val, val == 0
+}
+
+func (lnode LNode) setPrevFilePointer(v uint64) {
+	binary.LittleEndian.PutUint64(lnode[len(FL_SIG)+(3*HEADER_ENTRY_SIZE):len(FL_SIG)+(4*HEADER_ENTRY_SIZE)], v)
+}
+
+func (lnode LNode) nextFilePointer() (uint64, bool) {
+	val := binary.LittleEndian.Uint64(lnode[len(FL_SIG)+(4*HEADER_ENTRY_SIZE) : len(FL_SIG)+(5*HEADER_ENTRY_SIZE)])
+
+	return val, val == 0
+}
+
+func (lnode LNode) setNextFilePointer(v uint64) {
+	binary.LittleEndian.PutUint64(lnode[len(FL_SIG)+(4*HEADER_ENTRY_SIZE):len(FL_SIG)+(5*HEADER_ENTRY_SIZE)], v)
 }
 
 func (node LNode) getPtr(idx int) uint64 {
-	offset := FREE_LIST_HEADER_SIZE + idx*POINTER_SIZE
-	return binary.LittleEndian.Uint64(node[offset : offset+POINTER_SIZE])
+	return binary.LittleEndian.Uint64(node[FREE_LIST_HEADER_SIZE+idx*HEADER_ENTRY_SIZE:])
 }
+
 func (node LNode) setPtr(idx int, ptr uint64) {
-	offset := FREE_LIST_HEADER_SIZE + idx*POINTER_SIZE
-	binary.LittleEndian.PutUint64(node[offset:offset+POINTER_SIZE], ptr)
+	binary.LittleEndian.PutUint64(node[FREE_LIST_HEADER_SIZE+idx*HEADER_ENTRY_SIZE:FREE_LIST_HEADER_SIZE+(idx+1)*HEADER_ENTRY_SIZE], ptr)
 }
+
+// func (lnode LNode) isNodeFull() bool {
+// 	return BTREE_PAGE_SIZE == FREE_LIST_HEADER_SIZE + lnode.getTotalPointers() *
+// }
 
 type Freelist struct {
 	// callbacks for managing on-disk pages
-	get func(uint64) []byte // read a page
-	new func([]byte) uint64 // append a new page
-	set func(uint64) []byte // update an existing page
+	get                func(uint64) btreeplus.BNode  // read a page
+	new                func(btreeplus.BNode) uint64  // append a new page
+	set                func(uint64, btreeplus.BNode) // update an existing page
+	currentPagePointer uint64
 	// persisted data in the meta page
 	headPage uint64
 	headSeq  uint64
@@ -47,69 +95,97 @@ type Freelist struct {
 	maxSeq uint64 // saved `tailSeq` to prevent consuming newly added items
 }
 
-func NewFreelist(get func(uint64) []byte,
-	new func([]byte) uint64,
-	set func(uint64) []byte) Freelist {
+func NewFreelist(get func(uint64) btreeplus.BNode,
+	new func(btreeplus.BNode) uint64,
+	set func(uint64, btreeplus.BNode)) Freelist {
 	return Freelist{
 		get: get,
 		new: new,
 		set: set,
 	}
+
 }
 
-func (fl *Freelist) PopHead() (uint64, bool) {
-	ptr, head := flPop(fl)
-	if head == 0 {
-		return 0, false
-	}
-
-	fl.PushTail(head)
-	return ptr, true
-}
-
-func (fl *Freelist) PushTail(ptr uint64) {
-	LNode(fl.set(fl.tailPage)).setPtr(seq2idx(fl.tailSeq), ptr)
-	fl.tailSeq++
-
-	if seq2idx(fl.tailSeq) == 0 {
-		next, head := flPop(fl)
-
-		// nothing to pop hence new node allocation
-		if next == 0 {
-			next = fl.new(btreeplus.NewBnode())
-		}
-
-		LNode(fl.set(fl.tailPage)).setNext(next)
-		fl.tailPage = next
-		if head != 0 {
-			LNode(fl.set(fl.tailPage)).setPtr(0, head)
-			fl.tailSeq++
-		}
-	}
-}
-
-func (fl *Freelist) SetMaxSeq() {
+func (fl *Freelist) SetParamsFromLNode(lnode LNode, currentPagePointer uint64) {
+	fl.headSeq = lnode.getHeadPosition()
+	fl.tailSeq = lnode.getTailPosition()
+	fl.headPage, _ = lnode.prevFilePointer()
+	fl.tailPage, _ = lnode.nextFilePointer()
 	fl.maxSeq = fl.tailSeq
-}
-
-func flPop(fl *Freelist) (ptr uint64, head uint64) {
-	if fl.headSeq == fl.maxSeq {
-		return 0, 0
-	}
-
-	node := LNode(fl.get(fl.headPage))
-	ptr = node.getPtr(seq2idx(fl.headSeq))
-
-	fl.headSeq++
-
-	if seq2idx(fl.headSeq) == 0 {
-		head, fl.headPage = fl.headPage, node.getNext()
-		helpers.Assert(fl.headPage != 0)
-	}
-
-	return
+	fl.currentPagePointer = currentPagePointer
 }
 
 func seq2idx(seq uint64) int {
-	return int(seq % FREE_LIST_CAP)
+	return int(seq) % FREE_LIST_CAP
 }
+
+func (fl *Freelist) PushTail(ptr uint64) {
+	/*
+		1. if tail wraps to head, move to a new page
+		2. else just push value and update tail position
+		3. update the mem location
+	*/
+
+	if seq2idx(fl.tailSeq+1) == seq2idx(fl.headSeq) {
+
+		for seq2idx(fl.tailSeq+1) == seq2idx(fl.headSeq) {
+			if fl.tailSeq != 0 {
+				fl.SetParamsFromLNode(LNode(fl.get(fl.tailPage)), fl.tailPage)
+			} else {
+				// create new page
+				pageLNode := LNode(btreeplus.NewBnode())
+				pagePtr := fl.new(btreeplus.BNode(pageLNode))
+
+				// update current page with next ptr ref
+				curPageLNode := LNode(fl.get(fl.currentPagePointer))
+				curPageLNode.setNextFilePointer(pagePtr)
+
+				fl.set(pagePtr, btreeplus.BNode(pageLNode))
+
+				// update back ptr for new page
+				pageLNode.setPrevFilePointer(fl.currentPagePointer)
+				fl.currentPagePointer = pagePtr
+			}
+		}
+
+	}
+
+	curpageNode := LNode(fl.get(fl.currentPagePointer))
+	curpageNode.setPtr(seq2idx(fl.tailSeq), ptr)
+	fl.tailSeq++
+	curpageNode.setTailPosition(fl.tailSeq)
+
+	fl.set(fl.currentPagePointer, btreeplus.BNode(curpageNode))
+
+}
+
+func (fl *Freelist) PopHead() (ptr uint64, exists bool) {
+	/*
+		1. if head moves into tail, return no exists
+		2. else return the head value and update head position
+		3. update the mem location
+	*/
+
+	for seq2idx(fl.headSeq+1) == seq2idx(fl.tailSeq) {
+		if fl.headPage != 0 {
+			fl.SetParamsFromLNode(LNode(fl.get(fl.headPage)), fl.headPage)
+		} else {
+			return 0, false
+
+		}
+	}
+
+	curpageNode := LNode(fl.get(fl.currentPagePointer))
+	ptr = curpageNode.getPtr(seq2idx(fl.headSeq))
+	exists = true
+	fl.headSeq++
+	curpageNode.setHeadPosition(fl.headSeq)
+	fl.set(fl.currentPagePointer, btreeplus.BNode(curpageNode))
+	return
+}
+
+/* free list needs to be able to do the following ->
+1. maintain enteries of free list info
+2. perform seeks
+3. perform updates refresh
+*/

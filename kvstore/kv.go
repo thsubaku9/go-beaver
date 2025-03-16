@@ -25,6 +25,8 @@ type KV struct {
 		flushedCount uint64
 		temp         []btreeplus.BNode
 		toDelete     []uint64
+		nappend      uint64
+		updates      map[uint64]btreeplus.BNode
 	}
 	lastUpdateFailed bool
 }
@@ -137,6 +139,14 @@ func (db *KV) Close() error {
 }
 
 func (db *KV) pageRead(ptr uint64) btreeplus.BNode {
+	if node, ok := db.page.updates[ptr]; ok {
+		return node
+	}
+
+	return db.pageReadFile(ptr)
+}
+
+func (db *KV) pageReadFile(ptr uint64) btreeplus.BNode {
 	start := uint64(0)
 
 	for _, chunk := range db.mmap.chunks {
@@ -154,6 +164,26 @@ func (db *KV) pageAppend(bnode btreeplus.BNode) uint64 {
 	ptr := db.page.flushedCount + uint64(len(db.page.temp))
 	db.page.temp = append(db.page.temp, bnode)
 	return ptr
+}
+
+func (db *KV) pageAlloc(bnode btreeplus.BNode) uint64 {
+	if ptr, isOk := db.freelist.PopHead(); isOk == true { // try the free list
+		db.page.updates[ptr] = bnode
+		return ptr
+	}
+
+	return db.pageAppend(bnode) // append
+}
+
+func (db *KV) pageWrite(ptr uint64) btreeplus.BNode {
+	if node, ok := db.page.updates[ptr]; ok {
+		return node
+	}
+
+	node := btreeplus.NewBnode()
+	copy(node, db.pageReadFile(ptr))
+	db.page.updates[ptr] = node
+	return node
 }
 
 func (db *KV) pageDelete(ptr uint64) {
@@ -244,7 +274,7 @@ func fsync(db *KV) error {
 const DB_SIG = "BEAVER01"
 
 // | sig | root_ptr | page_used |
-// | 8B |    8B    |     8B    |
+// | 8B  |    8B    |     8B    |
 func saveMeta(db *KV) []byte {
 	var data [24]byte
 	// fmt.Printf("META VALUES -> %v, %v, %v\n", DB_SIG, db.tree.GetRoot(), db.page.flushedCount)
