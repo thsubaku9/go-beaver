@@ -11,11 +11,12 @@ import (
 )
 
 type KV struct {
-	Path    string
-	filePtr *os.File
-	fd      int
-	tree    btreeplus.BTree
-	mmap    struct {
+	Path     string
+	filePtr  *os.File
+	fd       int
+	tree     btreeplus.BTree
+	freelist Freelist
+	mmap     struct {
 		totalMmapSizeBytes uint64
 		totalFileSizeBytes uint64
 		chunks             [][]byte
@@ -119,6 +120,8 @@ func (db *KV) Open() error {
 		chunks:             [][]byte{chunk},
 	}
 
+	// db.freelist = NewFreelist(db.pageRead, db.pageAppend, db.pageWrite)
+	// db.tree = btreeplus.NewBTree(db.pageRead, db.pageAlloc, db.pageDelete)
 	db.tree = btreeplus.NewBTree(db.pageRead, db.pageAppend, db.pageDelete)
 
 	readRoot(db, uint64(fileSize))

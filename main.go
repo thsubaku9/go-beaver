@@ -38,7 +38,9 @@ func main() {
 		println(err)
 	}
 
-	myStore.Set(btreeplus.ByteArr("k1"), btreeplus.ByteArr("mickey1"))
+	// myStore.Set(btreeplus.ByteArr("k1"), btreeplus.ByteArr("mickey1"))
+	// myStore.Set(btreeplus.ByteArr("k2"), btreeplus.ByteArr("mickey2"))
+	// myStore.Set(btreeplus.ByteArr("k3"), btreeplus.ByteArr("the clan"))
 
 	res, exists := myStore.Get(btreeplus.ByteArr("k1"))
 	if exists {
